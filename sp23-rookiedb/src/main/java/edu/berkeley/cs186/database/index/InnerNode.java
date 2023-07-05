@@ -11,6 +11,7 @@ import edu.berkeley.cs186.database.table.RecordId;
 
 import java.nio.ByteBuffer;
 import java.util.*;
+import java.util.stream.IntStream;
 
 /**
  * A inner node of a B+ tree. Every inner node in a B+ tree of order d stores
@@ -80,43 +81,80 @@ class InnerNode extends BPlusNode {
     // See BPlusNode.get.
     @Override
     public LeafNode get(DataBox key) {
-        // TODO(proj2): implement
-
-        return null;
+        return getNode(children.get(numLessThanEqual(key, keys)))
+            .get(key);
     }
 
     // See BPlusNode.getLeftmostLeaf.
     @Override
     public LeafNode getLeftmostLeaf() {
         assert(children.size() > 0);
-        // TODO(proj2): implement
 
-        return null;
+        return getNode(children.get(0)).getLeftmostLeaf();
     }
 
     // See BPlusNode.put.
     @Override
     public Optional<Pair<DataBox, Long>> put(DataBox key, RecordId rid) {
-        // TODO(proj2): implement
+        var pairOptional = getNode(children.get(numLessThanEqual(key, keys)))
+            .put(key, rid);
+        if (pairOptional.isPresent()) {
+            var pair = pairOptional.get();
+            return insert(pair.getFirst(), pair.getSecond());
+        }
+        sync();
+        return pairOptional;
+    }
 
+    private Optional<Pair<DataBox, Long>> insert(DataBox key, long pageNum) {
+        int index = numLessThan(key, keys);
+        keys.add(index, key);
+        children.add(index+1, pageNum);
+
+        var order = metadata.getOrder();
+        if (keys.size() > 2 * order) {
+            var midKey = keys.get(order);
+            var rightKeys = keys.subList(order+1, keys.size());
+            var rightChildren = children.subList(order+1, children.size());
+
+            keys = keys.subList(0, order);
+            children = children.subList(0, order+1);
+            sync();
+
+            var splitNode = new InnerNode(metadata, bufferManager, rightKeys, rightChildren, treeContext);
+            return Optional.of(new Pair<>(midKey, splitNode.getPage().getPageNum()));
+        }
+        sync();
         return Optional.empty();
+    }
+
+    private BPlusNode getNode(long pageNum) {
+        return BPlusNode.fromBytes(metadata, bufferManager, treeContext, pageNum);
     }
 
     // See BPlusNode.bulkLoad.
     @Override
     public Optional<Pair<DataBox, Long>> bulkLoad(Iterator<Pair<DataBox, RecordId>> data,
             float fillFactor) {
-        // TODO(proj2): implement
-
-        return Optional.empty();
+        var pairOptional = getNode(children.get(children.size() - 1))
+            .bulkLoad(data, fillFactor);
+        if (pairOptional.isPresent()) {
+            var pair = pairOptional.get();
+            var splitPair = insert(pair.getFirst(), pair.getSecond());
+            if (splitPair.isEmpty()) {
+                return bulkLoad(data, fillFactor);
+            } else {
+                return splitPair;
+            }
+        }
+        return pairOptional;
     }
 
     // See BPlusNode.remove.
     @Override
     public void remove(DataBox key) {
-        // TODO(proj2): implement
-
-        return;
+        // only leaf contains record
+        get(key).remove(key);
     }
 
     // Helpers /////////////////////////////////////////////////////////////////

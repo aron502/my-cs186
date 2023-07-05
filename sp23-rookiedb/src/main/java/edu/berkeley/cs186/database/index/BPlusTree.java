@@ -145,9 +145,7 @@ public class BPlusTree {
         // TODO(proj4_integration): Update the following line
         LockUtil.ensureSufficientLockHeld(lockContext, LockType.NL);
 
-        // TODO(proj2): implement
-
-        return Optional.empty();
+        return root.get(key).getKey(key);
     }
 
     /**
@@ -201,9 +199,7 @@ public class BPlusTree {
         // TODO(proj4_integration): Update the following line
         LockUtil.ensureSufficientLockHeld(lockContext, LockType.NL);
 
-        // TODO(proj2): Return a BPlusTreeIterator.
-
-        return Collections.emptyIterator();
+        return new BPlusTreeIterator();
     }
 
     /**
@@ -234,9 +230,7 @@ public class BPlusTree {
         // TODO(proj4_integration): Update the following line
         LockUtil.ensureSufficientLockHeld(lockContext, LockType.NL);
 
-        // TODO(proj2): Return a BPlusTreeIterator.
-
-        return Collections.emptyIterator();
+        return new BPlusTreeIterator(root.get(key), key);
     }
 
     /**
@@ -253,12 +247,24 @@ public class BPlusTree {
         // TODO(proj4_integration): Update the following line
         LockUtil.ensureSufficientLockHeld(lockContext, LockType.NL);
 
-        // TODO(proj2): implement
         // Note: You should NOT update the root variable directly.
         // Use the provided updateRoot() helper method to change
         // the tree's root if the old root splits.
+        var pairOptional = root.put(key, rid);
+        if (pairOptional.isPresent()) {
+            var pair = pairOptional.get();
+            splitRoot(pair.getFirst(), pair.getSecond());
+        }
+    }
 
-        return;
+    private void splitRoot(DataBox key, Long pageNum) {
+        var keys = new ArrayList<DataBox>();
+        var children = new ArrayList<Long>();
+        keys.add(key);
+        children.add(root.getPage().getPageNum());
+        children.add(pageNum);
+        var newRoot = new InnerNode(metadata, bufferManager, keys, children, lockContext);
+        updateRoot(newRoot);
     }
 
     /**
@@ -284,12 +290,16 @@ public class BPlusTree {
         // TODO(proj4_integration): Update the following line
         LockUtil.ensureSufficientLockHeld(lockContext, LockType.NL);
 
-        // TODO(proj2): implement
         // Note: You should NOT update the root variable directly.
         // Use the provided updateRoot() helper method to change
         // the tree's root if the old root splits.
-
-        return;
+        while (data.hasNext()) {
+            var pairOptional = root.bulkLoad(data, fillFactor);
+            if (pairOptional.isPresent()) {
+                var pair = pairOptional.get();
+                splitRoot(pair.getFirst(), pair.getSecond());
+            }
+        }
     }
 
     /**
@@ -308,9 +318,7 @@ public class BPlusTree {
         // TODO(proj4_integration): Update the following line
         LockUtil.ensureSufficientLockHeld(lockContext, LockType.NL);
 
-        // TODO(proj2): implement
-
-        return;
+        root.remove(key);
     }
 
     // Helpers /////////////////////////////////////////////////////////////////
@@ -422,18 +430,39 @@ public class BPlusTree {
 
     // Iterator ////////////////////////////////////////////////////////////////
     private class BPlusTreeIterator implements Iterator<RecordId> {
-        // TODO(proj2): Add whatever fields and constructors you want here.
+        LeafNode node;
+        Iterator<RecordId> iter;
+
+        BPlusTreeIterator() {
+            this.node = root.getLeftmostLeaf();
+            iter = node.scanAll();
+        }
+
+        BPlusTreeIterator(LeafNode node, DataBox key) {
+            this.node = node;
+            iter = node.scanGreaterEqual(key);
+        }
 
         @Override
         public boolean hasNext() {
-            // TODO(proj2): implement
-
+            if (iter.hasNext()) {
+                return true;
+            } else {
+                var rightSibling = node.getRightSibling();
+                if (rightSibling.isPresent()) {
+                    node = rightSibling.get();
+                    iter = node.scanAll();
+                    return true;
+                }
+            }
             return false;
         }
 
         @Override
         public RecordId next() {
-            // TODO(proj2): implement
+            if (iter.hasNext()) {
+                return iter.next();
+            }
 
             throw new NoSuchElementException();
         }
